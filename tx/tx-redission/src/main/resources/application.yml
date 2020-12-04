@@ -13,4 +13,7 @@ spring:
     timeout: 30000
   session:
     store-type: redis
-
+server:
+  port: 8880
+  servlet:
+    context-path: /

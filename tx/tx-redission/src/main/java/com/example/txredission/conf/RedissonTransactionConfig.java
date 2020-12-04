@@ -11,13 +11,13 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 import javax.annotation.PreDestroy;
 
 /**
- * redission 事务管理
+ * 管理redis事务
  * @author wenx
  * @date 2020-12-03
  */
 @Configuration
 @EnableTransactionManagement
-public class RedissonTransactionContextConfig {
+public class RedissonTransactionConfig {
 
     @Autowired
     RedissonClient redissonClient;

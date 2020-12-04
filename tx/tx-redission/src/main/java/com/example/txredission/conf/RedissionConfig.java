@@ -4,6 +4,7 @@ import cn.hutool.core.util.StrUtil;
 import org.redisson.Redisson;
 import org.redisson.api.RedissonClient;
 import org.redisson.config.Config;
+import org.redisson.config.SingleServerConfig;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
 import org.springframework.context.annotation.Bean;
@@ -24,13 +25,16 @@ public class RedissionConfig {
     public RedissonClient getRedisson(){
 
         Config config = new Config();
-        config.useSingleServer()
-                .setAddress("redis://" + redisProperties.getHost() + ":" + redisProperties.getPort());
+        SingleServerConfig serverConfig = config.useSingleServer()
+                .setAddress("redis://" + redisProperties.getHost() + ":" + redisProperties.getPort())
+                .setConnectionPoolSize(60)
+                .setConnectionMinimumIdleSize(30)
+                .setTimeout(5000)
+                .setDatabase(1);
         //版本默认auth 连接
         if(StrUtil.isNotEmpty(redisProperties.getPassword())){
-            config.useSingleServer().setPassword(redisProperties.getPassword());
+            serverConfig.setPassword(redisProperties.getPassword());
         }
-        config.useSingleServer().setDatabase(0);
         return Redisson.create(config);
     }
 
