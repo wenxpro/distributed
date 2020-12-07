@@ -1,310 +1,363 @@
 package com.example.lockzookeeper.util;
 
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.curator.framework.CuratorFramework;
-import org.apache.curator.framework.recipes.cache.ChildData;
-import org.apache.curator.framework.recipes.cache.TreeCache;
-import org.apache.curator.framework.recipes.cache.TreeCacheListener;
+import org.apache.curator.framework.api.ACLBackgroundPathAndBytesable;
+import org.apache.curator.framework.api.BackgroundPathAndBytesable;
+import org.apache.curator.framework.api.BackgroundPathable;
+import org.apache.curator.framework.imps.CuratorFrameworkState;
+import org.apache.curator.framework.recipes.locks.InterProcessLock;
 import org.apache.curator.framework.recipes.locks.InterProcessMutex;
-import org.apache.curator.framework.recipes.locks.InterProcessReadWriteLock;
 import org.apache.zookeeper.CreateMode;
+import org.apache.zookeeper.Watcher;
+import org.apache.zookeeper.ZooDefs;
+import org.apache.zookeeper.data.ACL;
+import org.apache.zookeeper.data.Stat;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
+/**
+ * Curator client
+ * @author wenx
+ * @date 2020-12-07
+ */
 @Component
 @Slf4j
 public class ZKClient {
+
     @Autowired
     CuratorFramework client;
-    TreeCache cache;
 
     /**
-     * 初始化本地缓存
-     * @param watchRootPath
+     * 创建一个所有权限节点即schema:world;id:annyone;permision:ZooDefs.Perms.ALL
+     * @param nodePath 创建的结点路径
+     * @param data 节点数据
+     * @param createMode 节点模式
+     * @param recursion 当父目录不存在是否创建 true:创建，fasle:不创建
      * @throws Exception
      */
-    private void initLocalCache(String watchRootPath) throws Exception {
-        cache = new TreeCache(client, watchRootPath);
-        TreeCacheListener listener = (client1, event) ->{
-            log.info("event:" + event.getType() +
-                    " |path:" + (null != event.getData() ? event.getData().getPath() : null));
+    public void createNode(String nodePath, String data, CreateMode createMode,boolean recursion)
+            throws Exception {
 
-            if(event.getData()!=null && event.getData().getData()!=null){
-                log.info("发生变化的节点内容为：" + new String(event.getData().getData()));
-            }
-
-            // client1.getData().
-        };
-        cache.getListenable().addListener(listener);
-        cache.start();
-    }
-
-
-    public void stop() {
-        client.close();
-    }
-
-    public CuratorFramework getClient() {
-        return client;
+        createNode(nodePath, ZooDefs.Ids.OPEN_ACL_UNSAFE, data, createMode,recursion);
     }
 
 
     /**
      * 创建节点
-     * @param mode       节点类型
-     * 1、PERSISTENT 持久化目录节点，存储的数据不会丢失。
-     * 2、PERSISTENT_SEQUENTIAL顺序自动编号的持久化目录节点，存储的数据不会丢失
-     * 3、EPHEMERAL临时目录节点，一旦创建这个节点的客户端与服务器端口也就是session 超时，这种节点会被自动删除
-     *4、EPHEMERAL_SEQUENTIAL临时自动编号节点，一旦创建这个节点的客户端与服务器端口也就是session 超时，这种节点会被自动删除，并且根据当前已近存在的节点数自动加 1，然后返回给客户端已经成功创建的目录节点名。
-     * @param path  节点名称
-     * @param nodeData  节点数据
+     * @param nodePath 创建节点的路径
+     * @param acls 节点控制权限列表
+     * @param data 节点存放的数据
+     * @param createMode 创建节点的模式
+     * @param recursion 当父目录不存在是否创建 true:创建，fasle:不创建
+     * 节点模式CreateMode<br>
+     * 1：CreateMode.EPHEMERAL 创建临时节点；该节点在客户端掉线的时候被删除<br>
+     * 2：CreateMode.EPHEMERAL_SEQUENTIAL  临时自动编号节点，一旦创建这个节点的客户端与服务器端口也就是session 超时，这种节点会被自动删除，并且根据当前已近存在的节点数自动加 1，然后返回给客户端已经成功创建的目录节点(可做分布式锁)<br>
+     * 3：CreateMode.PERSISTENT 持久化目录节点，存储的数据不会丢失。<br>
+     * 4：CreateMode.PERSISTENT_SEQUENTIAL  顺序自动编号的持久化目录节点，存储的数据不会丢失，并且根据当前已近存在的节点数自动加 1，然后返回给客户端已经成功创建的目录节点名<br>
+     * @throws Exception
      */
-    public void createNode(CreateMode mode, String path , String nodeData) {
-        try {
-            //使用creatingParentContainersIfNeeded()之后Curator能够自动递归创建所有所需的父节点
-            client.create().creatingParentsIfNeeded().withMode(mode).forPath(path,nodeData.getBytes("UTF-8"));
-        } catch (Exception e) {
-            log.error("注册出错", e);
+    public void createNode(String nodePath, List<ACL> acls, String data,
+                           CreateMode createMode, boolean recursion) throws Exception {
+        byte[] bytes = null;
+        if (!StringUtils.isBlank(data)) {
+            bytes = data.getBytes("UTF-8");
+        }
+        createNode(nodePath, acls, bytes, createMode,recursion);
+    }
+
+    /**
+     * @param nodePath 创建节点的路径
+     * @param acls 节点控制权限列表
+     * @param data 节点存放的数据
+     * @param createMode 创建节点的模式
+     * @param recursion 当父目录不存在是否创建 true:创建，fasle:不创建
+     * 节点模式CreateMode<br>
+     * 1：CreateMode.EPHEMERAL 创建临时节点；该节点在客户端掉线的时候被删除<br>
+     * 2：CreateMode.EPHEMERAL_SEQUENTIAL  临时自动编号节点，一旦创建这个节点的客户端与服务器端口也就是session 超时，这种节点会被自动删除，并且根据当前已近存在的节点数自动加 1，然后返回给客户端已经成功创建的目录节点(可做分布式锁)<br>
+     * 3：CreateMode.PERSISTENT 持久化目录节点，存储的数据不会丢失。<br>
+     * 4：CreateMode.PERSISTENT_SEQUENTIAL  顺序自动编号的持久化目录节点，存储的数据不会丢失，并且根据当前已近存在的节点数自动加 1，然后返回给客户端已经成功创建的目录节点名<br>
+     * @throws Exception
+     */
+    public void createNode(String nodePath, List<ACL> acls, byte[] data,
+                           CreateMode createMode,boolean recursion) throws Exception {
+        if(recursion){
+            ((BackgroundPathAndBytesable<?>) ((ACLBackgroundPathAndBytesable<?>) this.client
+                    .create().creatingParentsIfNeeded().withMode(createMode))
+                    .withACL(acls)).forPath(nodePath, data);
+        }
+        else{
+            ((BackgroundPathAndBytesable<?>) ((ACLBackgroundPathAndBytesable<?>) this.client
+                    .create().withMode(createMode))
+                    .withACL(acls)).forPath(nodePath, data);
         }
     }
 
     /**
-     * 创建节点
-     * @param mode       节点类型
-     *                   1、PERSISTENT 持久化目录节点，存储的数据不会丢失。
-     *                   2、PERSISTENT_SEQUENTIAL顺序自动编号的持久化目录节点，存储的数据不会丢失
-     *                   3、EPHEMERAL临时目录节点，一旦创建这个节点的客户端与服务器端口也就是session 超时，这种节点会被自动删除
-     *                   4、EPHEMERAL_SEQUENTIAL临时自动编号节点，一旦创建这个节点的客户端与服务器端口也就是session 超时，这种节点会被自动删除，并且根据当前已近存在的节点数自动加 1，然后返回给客户端已经成功创建的目录节点名。
-     * @param path  节点名称
+     * 创建一个所有权限的永久节点
+     * @param nodePath
+     * @param data
+     * @param recursion 当父目录不存在是否创建 true:创建，fasle:不创建
+     * @throws Exception
      */
-    public void createNode(CreateMode mode,String path ) {
-        try {
-            //使用creatingParentContainersIfNeeded()之后Curator能够自动递归创建所有所需的父节点
-            client.create().creatingParentsIfNeeded().withMode(mode).forPath(path);
-        } catch (Exception e) {
-            log.error("注册出错", e);
+    public void createPersitentNode(String nodePath, String data,boolean recursion) throws Exception {
+
+        createNode(nodePath, data, CreateMode.PERSISTENT,recursion);
+    }
+
+    /**
+     * 创建一个所有权限的零时节点
+     * @param nodePath
+     * @param data
+     * @param recursion 当父目录不存在是否创建 true:创建，fasle:不创建
+     * @throws Exception
+     */
+    public void createEphemeralNode(String nodePath, String data,boolean recursion) throws Exception {
+
+        createNode(nodePath, data, CreateMode.EPHEMERAL,recursion);
+    }
+
+    /**
+     * 创建一个带权限的永久节点
+     * @param nodePath
+     * @param data
+     * @param recursion 当父目录不存在是否创建 true:创建，fasle:不创建
+     * @throws Exception
+     */
+    public void createPersitentNodeWithAcl(String nodePath, String data,List<ACL> acls,boolean recursion) throws Exception {
+
+        createNode(nodePath, acls, data, CreateMode.PERSISTENT,recursion);
+    }
+
+    /**
+     * 创建一个带权限的零时节点
+     * @param nodePath
+     * @param data
+     * @param recursion 当父目录不存在是否创建 true:创建，fasle:不创建
+     * @throws Exception
+     */
+    public void createEphemeralNodeAcl(String nodePath, String data,List<ACL> acls,boolean recursion) throws Exception {
+
+        createNode(nodePath, acls, data, CreateMode.EPHEMERAL,recursion);
+    }
+
+
+
+
+    /**
+     * 创建序列节点且当父节点不存在时创建父节点
+     * @param nodePath
+     * @param acls 可参考：ZooDefs.Ids
+     * @param createMode
+     * @param recursion 当父目录不存在是否创建 true:创建，fasle:不创建
+     * @throws Exception
+     */
+    public void createSeqNode(String nodePath,List<ACL> acls,CreateMode createMode,boolean recursion) throws Exception {
+        if(recursion){
+            ((BackgroundPathAndBytesable<?>) ((ACLBackgroundPathAndBytesable<?>) this.client
+                    .create().creatingParentsIfNeeded()
+                    .withMode(createMode))
+                    .withACL(acls)).forPath(nodePath);
+        }
+        else{
+            ((BackgroundPathAndBytesable<?>) ((ACLBackgroundPathAndBytesable<?>) this.client
+                    .create()
+                    .withMode(createMode))
+                    .withACL(acls)).forPath(nodePath);
         }
     }
 
     /**
-     * 删除节点数据
-     *
-     * @param path
-     */
-    public void deleteNode(final String path) {
-        try {
-            deleteNode(path,true);
-        } catch (Exception ex) {
-            log.error("{}",ex);
-        }
-    }
-
-
-    /**
-     * 删除节点数据
-     * @param path
-     * @param deleteChildre   是否删除子节点
-     */
-    public void deleteNode(final String path,Boolean deleteChildre){
-        try {
-            if(deleteChildre){
-                //guaranteed()删除一个节点，强制保证删除,
-                // 只要客户端会话有效，那么Curator会在后台持续进行删除操作，直到删除节点成功
-                client.delete().guaranteed().deletingChildrenIfNeeded().forPath(path);
-            }else{
-                client.delete().guaranteed().forPath(path);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-
-    /**
-     * 设置指定节点的数据
-     * @param path
-     * @param datas
-     */
-    public void setNodeData(String path, byte[] datas){
-        try {
-            client.setData().forPath(path, datas);
-        }catch (Exception ex) {
-            log.error("{}",ex);
-        }
-    }
-
-    /**
-     * 获取指定节点的数据
+     * 存在返回 节点stat 信息；否则返回null
      * @param path
      * @return
+     * @throws Exception
      */
-    public byte[] getNodeData(String path){
-        Byte[] bytes = null;
-        try {
-            if(cache != null){
-                ChildData data = cache.getCurrentData(path);
-                if(data != null){
-                    return data.getData();
-                }
-            }
-            client.getData().forPath(path);
-            return client.getData().forPath(path);
-        }catch (Exception ex) {
-            log.error("{}",ex);
+    public Stat exists(String path) throws Exception {
+
+        return  this.client.checkExists().forPath(path);
+    }
+
+    /**
+     * 判断节点是否存在，存在则注册节点监视器
+     * @param path
+     * @param watcher
+     * @return
+     */
+    public boolean exists(String path, Watcher watcher) throws Exception {
+
+        if (null != watcher) {
+            return null != ((BackgroundPathable<?>) this.client.checkExists().usingWatcher(watcher)).forPath(path);
         }
-        return null;
+        return null != this.client.checkExists().forPath(path);
     }
 
     /**
-     * 获取数据时先同步
-     * @param path
+     * 判断是否处于连接状态
      * @return
      */
-    public byte[] synNodeData(String path){
-        client.sync();
-        return getNodeData( path);
-    }
+    public boolean isConnected() {
 
-    /**
-     * 判断路径是否存在
-     *
-     * @param path
-     * @return
-     */
-    public boolean isExistNode(final String path) {
-        client.sync();
-        try {
-            return null != client.checkExists().forPath(path);
-        } catch (Exception ex) {
+        if ((null == this.client)
+                || (!CuratorFrameworkState.STARTED.equals(this.client
+                .getState()))) {
             return false;
         }
+        return true;
     }
 
+    public void retryConnection() {
+        this.client.start();
+    }
 
     /**
-     * 获取节点的子节点
-     * @param path
+     * 获取连接客户端
      * @return
      */
-    public List<String> getChildren(String path) {
-        List<String> childrenList = new ArrayList<>();
-        try {
-            childrenList = client.getChildren().forPath(path);
-        } catch (Exception e) {
-            log.error("获取子节点出错", e);
-        }
-        return childrenList;
+    public CuratorFramework getInnerClient(){
+
+        return this.client;
+
     }
 
     /**
-     * 随机读取一个path子路径, "/"为根节点对应该namespace
-     * 先从cache中读取，如果没有，再从zookeeper中查询
+     * 关闭连接
+     */
+    public void quit() {
+
+        if ((null != this.client)
+                && (CuratorFrameworkState.STARTED
+                .equals(this.client.getState()))) {
+            this.client.close();
+        }
+    }
+
+
+    /**
+     * 删除节点
      * @param path
-     * @return
+     * @param deleChildren
+     * @throws Exception
+
+     */
+    public void deleteNode(String path,boolean deleChildren) throws Exception {
+
+        if(deleChildren){
+            this.client.delete().guaranteed().deletingChildrenIfNeeded()
+                    .forPath(path);
+        }
+        else{
+            this.client.delete().forPath(path);
+        }
+    }
+
+    /**
+     * 设置节点数据
+     * @param nodePath
+     * @param data
      * @throws Exception
      */
-    public String getRandomData(String path)  {
-        try{
-            Map<String,ChildData> cacheMap = cache.getCurrentChildren(path);
-            if(cacheMap != null && cacheMap.size() > 0) {
-                log.debug("get random value from cache,path="+path);
-                Collection<ChildData> values = cacheMap.values();
-                List<ChildData> list = new ArrayList<>(values);
-                Random rand = new Random();
-                byte[] b = list.get(rand.nextInt(list.size())).getData();
-                return new String(b,"utf-8");
-            }
-            if(isExistNode(path)) {
-                log.debug("path [{}] is not exists,return null",path);
-                return null;
-            } else {
-                log.debug("read random from zookeeper,path="+path);
-                List<String> list = client.getChildren().forPath(path);
-                if(list == null || list.size() == 0) {
-                    log.debug("path [{}] has no children return null",path);
-                    return null;
-                }
-                Random rand = new Random();
-                String child = list.get(rand.nextInt(list.size()));
-                path = path + "/" + child;
-                byte[] b = client.getData().forPath(path);
-                String value = new String(b,"utf-8");
-                return value;
-            }
-        }catch(Exception e){
-            log.error("{}",e);
-        }
-        return null;
+    public void setNodeData(String nodePath, String data) throws Exception {
 
+        byte[] bytes = null;
+        if (!StringUtils.isBlank(data)) {
+            bytes = data.getBytes("UTF-8");
+        }
+        setNodeData(nodePath, bytes);
     }
 
     /**
-     * 可重入共享锁  -- Shared Reentrant Lock
+     * 设置节点数据
+     * @param nodePath
+     * @param data
+     * @throws Exception
+     */
+    public void setNodeData(String nodePath, byte[] data) throws Exception {
+        this.client.setData().forPath(nodePath, data);
+    }
+
+    public String getNodeData(String nodePath, boolean watch) throws Exception {
+        byte[] data;
+        if (watch) {
+            data = (byte[]) ((BackgroundPathable<?>) this.client.getData()
+                    .watched()).forPath(nodePath);
+        } else {
+            data = (byte[]) this.client.getData().forPath(nodePath);
+        }
+        if ((null == data) || (data.length <= 0)) {
+            return null;
+        }
+        return new String(data, "UTF-8");
+    }
+
+    public String getNodeData(String nodePath) throws Exception {
+        return getNodeData(nodePath, false);
+    }
+
+    public String getNodeData(String nodePath, Watcher watcher)
+            throws Exception {
+        byte[] data = getNodeBytes(nodePath, watcher);
+        return new String(data, "UTF-8");
+    }
+
+    public byte[] getNodeBytes(String nodePath, Watcher watcher)
+            throws Exception {
+        byte[] bytes = null;
+        if (null != watcher) {
+            bytes = (byte[]) ((BackgroundPathable<?>) this.client.getData()
+                    .usingWatcher(watcher)).forPath(nodePath);
+        } else {
+            bytes = (byte[]) this.client.getData().forPath(nodePath);
+        }
+        return bytes;
+    }
+
+    public byte[] getNodeBytes(String nodePath) throws Exception {
+        return getNodeBytes(nodePath, null);
+    }
+
+
+    @SuppressWarnings("unchecked")
+    public List<String> getChildren(String nodePath, Watcher watcher)
+            throws Exception {
+        return (List<String>) ((BackgroundPathable<?>) this.client
+                .getChildren().usingWatcher(watcher)).forPath(nodePath);
+    }
+
+    public List<String> getChildren(String path) throws Exception {
+        return (List<String>) this.client.getChildren().forPath(path);
+    }
+
+    @SuppressWarnings("unchecked")
+    public List<String> getChildren(String path, boolean watcher)
+            throws Exception {
+        if (watcher) {
+            return (List<String>) ((BackgroundPathable<?>) this.client
+                    .getChildren().watched()).forPath(path);
+        }
+        return (List<String>) this.client.getChildren().forPath(path);
+    }
+
+
+    public ZKClient addAuth(String authSchema, String authInfo)
+            throws Exception {
+        synchronized (ZKClient.class) {
+            this.client.getZookeeperClient().getZooKeeper()
+                    .addAuthInfo(authSchema, authInfo.getBytes());
+        }
+        return this;
+    }
+
+    /**
+     * 分布式锁
      * @param lockPath
-     * @param time
-     * @param dealWork 获取
      * @return
      */
-    public Object getSRLock(String lockPath,long time, SRLockDealCallback<?> dealWork){
-        InterProcessMutex lock = new InterProcessMutex(client, lockPath);
-        try {
-            if (!lock.acquire(time, TimeUnit.SECONDS)) {
-                log.error("get lock fail:{}", " could not acquire the lock");
-                return null;
-            }
-            log.debug("{} get the lock",lockPath);
-            Object b = dealWork.deal();
-            return b;
-        }catch(Exception e){
-            log.error("{}", e);
-        }finally{
-            try {
-                lock.release();
-            } catch (Exception e) {
-                //log.error("{}",e);
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 获取读写锁
-     * @param path
-     * @return
-     */
-    public InterProcessReadWriteLock getReadWriteLock(String path){
-        InterProcessReadWriteLock readWriteLock = new InterProcessReadWriteLock(client, path);
-        return readWriteLock;
-    }
-
-    /**
-     * 在注册监听器的时候，如果传入此参数，当事件触发时，逻辑由线程池处理
-     */
-    ExecutorService pool = Executors.newFixedThreadPool(2);
-
-    /**
-     * 监听数据节点的变化情况
-     * @param watchPath
-     * @param listener
-     */
-    public void watchPath(String watchPath,TreeCacheListener listener){
-        //   NodeCache nodeCache = new NodeCache(client, watchPath, false);
-        TreeCache cache = new TreeCache(client, watchPath);
-        cache.getListenable().addListener(listener,pool);
-        try {
-            cache.start();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+    public InterProcessLock getInterProcessLock(String lockPath) {
+        return new InterProcessMutex(this.client, lockPath);
     }
 
 }
