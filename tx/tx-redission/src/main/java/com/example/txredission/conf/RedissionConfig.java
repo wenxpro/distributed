@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * redission conf
+ *
  * @author wenx
  * @date 2020-12-02
  */
@@ -22,7 +23,7 @@ public class RedissionConfig {
     private RedisProperties redisProperties;
 
     @Bean
-    public RedissonClient getRedisson(){
+    public RedissonClient getRedisson() {
 
         Config config = new Config();
         SingleServerConfig serverConfig = config.useSingleServer()
@@ -32,7 +33,7 @@ public class RedissionConfig {
                 .setTimeout(5000)
                 .setDatabase(1);
         //版本默认auth 连接
-        if(StrUtil.isNotEmpty(redisProperties.getPassword())){
+        if (StrUtil.isNotEmpty(redisProperties.getPassword())) {
             serverConfig.setPassword(redisProperties.getPassword());
         }
         return Redisson.create(config);

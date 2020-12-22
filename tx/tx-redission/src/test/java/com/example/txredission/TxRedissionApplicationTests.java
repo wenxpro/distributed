@@ -28,12 +28,12 @@ class TxRedissionApplicationTests {
     void test() {
         RMap<String, Object> map = redissionClient.getMap("anyMap");
         Object currentObject = map.putIfAbsent("test", "test");
-        log.debug("currentObject:{}",currentObject);
+        log.debug("currentObject:{}", currentObject);
         show();
     }
 
     @Test
-    void testTx(){
+    void testTx() {
         RTransaction transaction = redissionClient.createTransaction(TransactionOptions.defaults());
         RMap<String, Object> map = transaction.getMap("anyMap");
         Object currentObject = map.putIfAbsent("testTx", "testTx");
@@ -42,7 +42,7 @@ class TxRedissionApplicationTests {
 
     @Test
     @Transactional
-    void testAnnoTx(){
+    void testAnnoTx() {
         RTransaction transaction = transactionManager.getCurrentTransaction();
         RMap<String, Object> map = transaction.getMap("anyMap");
         Object currentObject = map.putIfAbsent("testAnnoTx", "testAnnoTx");
@@ -56,7 +56,7 @@ class TxRedissionApplicationTests {
             Object currentObject = map.putIfAbsent("testTx1234", "testTx1234");
             transaction.commit();
             throw new TxException(AsyncExceptionConsts.testException);
-        }catch (TransactionException e){
+        } catch (TransactionException e) {
             log.info("testTx1234 报错了 开始回滚");
             transaction.rollback();
         }
@@ -64,7 +64,7 @@ class TxRedissionApplicationTests {
 
 
     @Test
-    void show(){
+    void show() {
         RMap<String, Object> map = redissionClient.getMap("anyMap");
         log.info("map:{}", JSON.toJSONString(map));
     }

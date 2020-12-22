@@ -1,8 +1,10 @@
 package com.example.txredission.exception;
 
 import org.springframework.transaction.TransactionException;
+
 /**
  * 事务锁异常
+ *
  * @author wenx
  * @date 2020-12-03
  */

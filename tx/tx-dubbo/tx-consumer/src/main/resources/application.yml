@@ -1,0 +1,5 @@
+spring:
+  application:
+    name: dubbo-auto-configure-consumer-sample
+server:
+  port: 8082
