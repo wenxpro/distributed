@@ -6,7 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 
-@MapperScan("com.example.order.mapper")
+@MapperScan("com.example.order.repository")
 @SpringBootApplication
 @EnableDiscoveryClient
 @EnableFeignClients

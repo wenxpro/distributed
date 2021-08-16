@@ -63,7 +63,7 @@
         <dependency>
             <groupId>mysql</groupId>
             <artifactId>mysql-connector-java</artifactId>
-            <version>5.1.39</version>
+            <version>8.0.11</version>
         </dependency>
 
         <dependency>
@@ -71,13 +71,6 @@
             <artifactId>mybatis-plus-boot-starter</artifactId>
             <version>3.1.1</version>
         </dependency>
-
-        <dependency>
-            <groupId>io.seata</groupId>
-            <artifactId>seata-all</artifactId>
-            <version>1.1.0</version>
-        </dependency>
-
     </dependencies>
 
     <!--demo01父模块中添加依赖-->
